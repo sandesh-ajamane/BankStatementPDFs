@@ -19,78 +19,62 @@ function App() {
   const [editIndex, setEditIndex] = useState(null);
   const [editRowData, setEditRowData] = useState({});
 
+  const renderPdfPageAsImage = async (file, password) => {
+    const typedarray = new Uint8Array(await file.arrayBuffer());
+    const loadingTask = getDocument({ data: typedarray, password });
+    const pdf = await loadingTask.promise;
+    const page = await pdf.getPage(1); // First page (adjust if needed)
+  
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+  
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+  
+    await page.render({ canvasContext: context, viewport }).promise;
+  
+    return canvas.toDataURL();
+  };
 
+  
   const downloadPDF = async () => {
     if (!selectedFile || !pdfPassword) {
       alert("No file or password.");
       return;
     }
-
-    const arrayBuffer = await selectedFile.arrayBuffer();
   
     try {
-      const pdfDoc = await PDFDocument.load(arrayBuffer, {
-        password: pdfPassword,
-      });
+      const imgData = await renderPdfPageAsImage(selectedFile, pdfPassword);
+      const doc = new jsPDF('p', 'pt', 'a4'); // Portrait, points, A4
   
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const page = pdfDoc.addPage([595.28, 841.89]); // A4 size in points
+      // Add image of original PDF as background
+      doc.addImage(imgData, 'PNG', 0, 0, 595.28, 841.89);
   
-      let y = 800;
-  
-      page.drawText('Updated Transactions:', {
-        x: 50,
-        y,
-        size: 14,
-        font,
-        color: rgb(0, 0, 0),
-      });
-  
-      y -= 30;
-  
-      const header = ['Sr No', 'Date', 'Remarks', 'Debit', 'Credit', 'Balance'];
-      const colX = [50, 90, 140, 320, 390, 460];
-  
-      // Draw table header
-      header.forEach((text, i) => {
-        page.drawText(text, {
-          x: colX[i],
-          y,
-          size: 10,
-          font,
-          color: rgb(0.2, 0.2, 0.2),
-        });
-      });
-  
-      y -= 20;
-  
-      tableData.forEach(row => {
-        const values = [
+      // Add edited table
+      autoTable(doc, {
+        head: [['Sr No', 'Date', 'Remarks', 'Debit', 'Credit', 'Balance']],
+        body: tableData.map(row => [
           row.srNo,
           row.date,
           row.remarks,
           row.debit || '-',
           row.credit || '-',
-          row.balance,
-        ];
-        values.forEach((text, i) => {
-          page.drawText(String(text), {
-            x: colX[i],
-            y,
-            size: 9,
-            font,
-            color: rgb(0, 0, 0),
-          });
-        });
-        y -= 15;
+          row.balance
+        ]),
+        startY: 300, // Adjust to where the original table starts
+        styles: {
+          fontSize: 9,
+          overflow: 'linebreak',
+          cellPadding: 3
+        },
       });
   
-      const pdfBytes = await pdfDoc.save();
-  
-      saveAs(new Blob([pdfBytes], { type: 'application/pdf' }), 'updated_bank_statement.pdf');
+      // Save final PDF
+      doc.save('updated_bank_statement.pdf');
     } catch (error) {
-      console.error("Failed to generate updated PDF:", error);
-      alert("Unable to generate PDF. Check password or file format.");
+      console.error("❌ Failed to generate PDF:", error);
+      alert("Unable to generate PDF. Check password or format.");
     }
   };
   
